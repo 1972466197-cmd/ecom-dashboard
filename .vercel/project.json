@@ -1,1 +1,16 @@
-{"projectId":"prj_bLQBvgzKMnVxb5YdQDJsa5jEVDgz","orgId":"team_ew2Nq0ayrYkfu5CBEAuIIPFQ","projectName":"ecom-dashboard"}
+{
+  "projectId": "prj_bLQBvgzKMnVxb5YdQDJsa5jEVDgz",
+  "orgId": "team_ew2Nq0ayrYkfu5CBEAuIIPFQ",
+  "projectName": "ecom-dashboard",
+  "settings": {
+    "createdAt": 1774256984706,
+    "framework": "nextjs",
+    "devCommand": null,
+    "installCommand": null,
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rootDirectory": null,
+    "directoryListing": false,
+    "nodeVersion": "24.x"
+  }
+}
