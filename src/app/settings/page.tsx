@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation'
 
 interface Shop {
   id: number
+  shop_id: number | null
   shop_name: string
-  platform: string
+  platform: string | null
   group_id: number | null
   manager_name: string | null
   account_name: string | null
