@@ -1,0 +1,33 @@
+===========================================
+请在 Vercel 控制台添加以下环境变量：
+===========================================
+
+1. 打开项目：
+https://vercel.com/1972466197-cmds-projects/ecom-dashboard/settings/environment-variables
+
+2. 点击 "Add New" 添加以下两个变量：
+
+变量 1:
+Name: NEXT_PUBLIC_SUPABASE_URL
+Value: https://你的项目.supabase.co
+Environment: 勾选 Production, Preview, Development
+
+变量 2:
+Name: NEXT_PUBLIC_SUPABASE_ANON_KEY
+Value: 你的 anon public key (从 Supabase 获取)
+Environment: 勾选 Production, Preview, Development
+
+3. 保存后，回到 Deployments 页面重新部署
+
+===========================================
+如何获取 Supabase 密钥：
+===========================================
+
+1. 访问：https://app.supabase.com
+2. 选择你的项目
+3. 点击 Settings → API
+4. 复制：
+   - Project URL: https://xxxxxxxxxxxxx.supabase.co
+   - anon public: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+===========================================

@@ -1,0 +1,59 @@
+# Query: <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+# ContextLines: 1
+
+11 个结果 - 11 文件
+
+src\app\import\page.tsx:
+  243        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  244:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  245          <nav className="space-y-4">
+
+src\app\products\page.tsx:
+  110        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  111:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  112          <nav className="space-y-4">
+
+src\app\profit\page.tsx:
+  266        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  267:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  268          <nav className="space-y-4">
+
+src\app\sales\page.tsx:
+  375        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  376:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  377          <nav className="space-y-4">
+
+src\app\sales-supabase\page.tsx:
+  125        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  126:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  127          <nav className="space-y-4">
+
+src\app\settings\page.tsx:
+  132        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  133:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  134          <nav className="space-y-4">
+
+src\app\shop-data\[shop]\page.tsx:
+  312        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  313:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  314          <nav className="space-y-4">
+
+src\app\shops\page.tsx:
+  311        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  312:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  313          <nav className="space-y-4">
+
+src\app\wps\page.tsx:
+  71        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  72:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  73          <nav className="space-y-4">
+
+src\app\wps\import\page.tsx:
+  245        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  246:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  247          <nav className="space-y-4">
+
+src\components\Dashboard.tsx:
+  278        <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
+  279:         <h2 className="text-2xl font-bold mb-8 text-orange-500">E-Com Center</h2>
+  280          <nav className="space-y-4">

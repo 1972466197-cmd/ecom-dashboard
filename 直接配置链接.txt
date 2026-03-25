@@ -1,0 +1,25 @@
+=====================================
+点击以下链接直接配置环境变量：
+=====================================
+
+1. 打开环境变量页面：
+https://vercel.com/1972466197-cmds-projects/ecom-dashboard/settings/environment-variables
+
+2. 添加第一个变量：
+Name: NEXT_PUBLIC_SUPABASE_URL
+Value: https://ergesvxuiajxrewfpydk.supabase.co
+Environment: 全选 (Production, Preview, Development)
+点击 Save
+
+3. 添加第二个变量：
+Name: NEXT_PUBLIC_SUPABASE_ANON_KEY
+Value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVyZ2Vzdnh1aWFqeHJld2ZweWRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMjIzNzksImV4cCI6MjA4OTc5ODM3OX0.tbJyeC_PixTwk6fnAE1m6w_uQ2nXMdECFBCUGeph8V0
+Environment: 全选 (Production, Preview, Development)
+点击 Save
+
+4. 保存后，回到 Deployments 页面：
+https://vercel.com/1972466197-cmds-projects/ecom-dashboard/deployments
+
+5. 找到失败的部署，点击 ... → Redeploy
+
+=====================================
