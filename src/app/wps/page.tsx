@@ -66,7 +66,7 @@ export default function WPSSync() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="">
       {/* 侧边栏 */}
       <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
         <h2 className="text-2xl font-bold mb-8 text-orange-500">山麓众创科技</h2>
@@ -87,7 +87,7 @@ export default function WPSSync() {
       </aside>
 
       {/* 主内容区 */}
-      <main className="flex-1 p-8">
+      <main className="p-8">
         {/* 头部 */}
         <header className="flex justify-between items-center mb-8">
           <div>

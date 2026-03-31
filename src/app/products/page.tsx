@@ -1,423 +1,199 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
-// 商品数据类型
-interface Product {
+interface ProductReport {
   id: number
-  name: string
-  sku: string
-  category: string
-  price: number
-  cost: number
-  stock: number
-  sales: number
-  status: 'onsale' | 'offline' | 'warning'
-  platform: string[]
+  shop_id: number
+  report_date: string
+  product_name: string
+  product_id_external: string
+  paying_amount: number
+  visitors: number
+  paying_buyers: number
 }
 
-// 模拟商品数据
-const MOCK_PRODUCTS: Product[] = [
-  { id: 1, name: '新款春夏 T 恤', sku: 'TS-2026-001', category: '服装', price: 99, cost: 35, stock: 1250, sales: 3420, status: 'onsale', platform: ['天猫', '拼多多', '抖音'] },
-  { id: 2, name: '休闲牛仔裤', sku: 'JN-2026-002', category: '服装', price: 199, cost: 80, stock: 580, sales: 1890, status: 'onsale', platform: ['天猫', '拼多多'] },
-  { id: 3, name: '运动卫衣', sku: 'WD-2026-003', category: '服装', price: 159, cost: 55, stock: 45, sales: 2100, status: 'warning', platform: ['天猫', '抖音'] },
-  { id: 4, name: '经典小白鞋', sku: 'SX-2026-004', category: '鞋履', price: 299, cost: 120, stock: 0, sales: 890, status: 'offline', platform: [] },
-  { id: 5, name: '商务休闲裤', sku: 'CK-2026-005', category: '服装', price: 179, cost: 65, stock: 320, sales: 1560, status: 'onsale', platform: ['天猫', '拼多多', '抖音'] },
-  { id: 6, name: '防晒外套', sku: 'JK-2026-006', category: '服装', price: 229, cost: 90, stock: 180, sales: 670, status: 'onsale', platform: ['抖音'] },
-]
+interface Shop {
+  id: number
+  name: string
+  platform: string
+}
 
-const CATEGORIES = ['全部类目', '服装', '鞋履', '配饰', '其他']
-const STATUS_OPTIONS = [
-  { value: 'all', label: '全部状态' },
-  { value: 'onsale', label: '售卖中' },
-  { value: 'offline', label: '已下架' },
-  { value: 'warning', label: '库存预警' },
-]
-
-export default function ProductManagement() {
+export default function ProductsPage() {
+  const [shops, setShops] = useState<Shop[]>([])
+  const [selectedShop, setSelectedShop] = useState<string>('')
+  const [productData, setProductData] = useState<ProductReport[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('全部类目')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS)
-  const [showAddModal, setShowAddModal] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
-  }
+  useEffect(() => {
+    loadData()
+  }, [])
 
-  // 筛选商品
-  const filteredProducts = products.filter(product => {
-    const matchSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       product.sku.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchCategory = categoryFilter === '全部类目' || product.category === categoryFilter
-    const matchStatus = statusFilter === 'all' || product.status === statusFilter
-    return matchSearch && matchCategory && matchStatus
-  })
+  useEffect(() => {
+    if (selectedShop) {
+      loadProductData()
+    }
+  }, [selectedShop])
 
-  // 切换商品上下架
-  const toggleProductStatus = (id: number) => {
-    setProducts(products.map(p => 
-      p.id === id 
-        ? { ...p, status: p.status === 'offline' ? 'onsale' : 'offline' as 'onsale' | 'offline' | 'warning' }
-        : p
-    ))
-    showToast('商品状态已更新')
-  }
-
-  // 打开编辑
-  const handleEdit = (product: Product) => {
-    setEditingProduct(product)
-  }
-
-  // 保存编辑
-  const handleSaveEdit = () => {
-    if (editingProduct) {
-      setProducts(products.map(p => p.id === editingProduct.id ? editingProduct : p))
-      setEditingProduct(null)
-      showToast('商品信息已保存')
+  async function loadData() {
+    const { data } = await supabase.from('shops').select('*').order('name')
+    if (data) {
+      setShops(data)
+      if (data.length > 0) {
+        setSelectedShop(String(data[0].id))
+      }
     }
   }
 
-  // 状态标签
-  const getStatusBadge = (status: Product['status']) => {
-    const config = {
-      onsale: { bg: 'bg-green-100', text: 'text-green-700', label: '售卖中' },
-      offline: { bg: 'bg-slate-100', text: 'text-slate-700', label: '已下架' },
-      warning: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: '库存预警' },
-    }
-    const { bg, text, label } = config[status]
-    return <span className={`px-2 py-1 ${bg} ${text} rounded-full text-xs`}>{label}</span>
+  async function loadProductData() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('product_daily_reports')
+      .select('*')
+      .eq('shop_id', selectedShop)
+      .order('report_date', { ascending: false })
+      .limit(100)
+    
+    setProductData(data || [])
+    setLoading(false)
   }
 
-  // 平台标签
-  const getPlatformTags = (platforms: string[]) => {
-    if (platforms.length === 0) return <span className="text-slate-400 text-sm">未上架</span>
-    return (
-      <div className="flex gap-1 flex-wrap">
-        {platforms.map(p => (
-          <span key={p} className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{p}</span>
-        ))}
-      </div>
-    )
-  }
+  const filteredData = productData.filter(row =>
+    row.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    row.product_id_external?.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  const totalSales = filteredData.reduce((sum, d) => sum + (d.paying_amount || 0), 0)
+  const totalVisitors = filteredData.reduce((sum, d) => sum + (d.visitors || 0), 0)
+  const totalBuyers = filteredData.reduce((sum, d) => sum + (d.paying_buyers || 0), 0)
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      {/* 侧边栏 */}
-      <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
-        <h2 className="text-2xl font-bold mb-8 text-orange-500">山麓众创科技</h2>
-        <nav className="space-y-4">
-          <a href="/" className="block py-2 px-4 hover:bg-slate-800 rounded">📊 经营看板</a>
-          <a href="/products" className="block py-2 px-4 bg-slate-800 rounded">📦 商品管理</a>
-          <a href="/sales" className="block py-2 px-4 hover:bg-slate-800 rounded">🏪 店铺销售情况</a>
-          <a href="/shops" className="block py-2 px-4 hover:bg-slate-800 rounded">🏢 店铺分组管理</a>
-          <div>
-            <a href="/wps" className="block py-2 px-4 hover:bg-slate-800 rounded mb-2">🔗 WPS 同步</a>
-            <div className="ml-4 space-y-1">
-              <a href="/wps/import" className="block py-1.5 px-3 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded">📥 导入文档</a>
-              <a href="/wps" className="block py-1.5 px-3 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded">🔄 同步任务</a>
-            </div>
-          </div>
-          <a href="/settings" className="block py-2 px-4 hover:bg-slate-800 rounded">⚙️ 系统设置</a>
-        </nav>
-      </aside>
+    <div>
+      <h1 style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 24, color: '#1a1a2e' }}>
+        📦 商品管理
+      </h1>
 
-      {/* 主内容区 */}
-      <main className="flex-1 p-8">
-        {/* Toast 提示 */}
-        {toast && (
-          <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg ${
-            toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
-          } text-white animate-pulse`}>
-            {toast.message}
-          </div>
-        )}
+      {/* 筛选区 */}
+      <div style={{
+        display: 'flex',
+        gap: 16,
+        marginBottom: 24,
+        flexWrap: 'wrap',
+        alignItems: 'center',
+      }}>
+        <select
+          value={selectedShop}
+          onChange={(e) => setSelectedShop(e.target.value)}
+          style={{ padding: '10 16', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }}
+        >
+          {shops.map(shop => (
+            <option key={shop.id} value={shop.id}>
+              {shop.name} ({shop.platform})
+            </option>
+          ))}
+        </select>
 
-        {/* 头部 */}
-        <header className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-800">商品管理</h1>
-            <p className="text-slate-500 mt-1">管理全平台商品信息、库存和上下架状态</p>
-          </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="bg-orange-500 text-white px-6 py-2.5 rounded-lg hover:bg-orange-600 shadow-md transition-colors flex items-center gap-2"
-          >
-            <span>➕</span> 新增商品
-          </button>
-        </header>
+        <input
+          type="text"
+          placeholder="搜索商品名称或 ID..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            padding: '10 16',
+            borderRadius: 8,
+            border: '1px solid #d9d9d9',
+            fontSize: 14,
+            minWidth: 300,
+          }}
+        />
+      </div>
 
-        {/* 统计卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-            <p className="text-slate-500 text-sm">商品总数</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{products.length}</p>
-          </div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-            <p className="text-slate-500 text-sm">售卖中</p>
-            <p className="text-2xl font-bold text-green-600 mt-1">{products.filter(p => p.status === 'onsale').length}</p>
-          </div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-            <p className="text-slate-500 text-sm">库存预警</p>
-            <p className="text-2xl font-bold text-yellow-600 mt-1">{products.filter(p => p.status === 'warning').length}</p>
-          </div>
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-            <p className="text-slate-500 text-sm">已下架</p>
-            <p className="text-2xl font-bold text-slate-600 mt-1">{products.filter(p => p.status === 'offline').length}</p>
+      {/* 汇总卡片 */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: 16,
+        marginBottom: 24,
+      }}>
+        <div style={{ padding: 20, background: '#f0f8ff', borderRadius: 8 }}>
+          <div style={{ fontSize: 14, color: '#666', marginBottom: 8 }}>商品销售额</div>
+          <div style={{ fontSize: 24, fontWeight: 'bold', color: '#1890ff' }}>
+            ¥{(totalSales / 10000).toFixed(2)}万
           </div>
         </div>
-
-        {/* 筛选栏 */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <input
-                type="text"
-                placeholder="搜索商品名称或 SKU..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-              />
-            </div>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-            >
-              {CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-            >
-              {STATUS_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+        <div style={{ padding: 20, background: '#f6ffed', borderRadius: 8 }}>
+          <div style={{ fontSize: 14, color: '#666', marginBottom: 8 }}>总访客数</div>
+          <div style={{ fontSize: 24, fontWeight: 'bold', color: '#52c41a' }}>
+            {totalVisitors.toLocaleString()}
           </div>
         </div>
+        <div style={{ padding: 20, background: '#fff7e6', borderRadius: 8 }}>
+          <div style={{ fontSize: 14, color: '#666', marginBottom: 8 }}>支付买家数</div>
+          <div style={{ fontSize: 24, fontWeight: 'bold', color: '#fa8c16' }}>
+            {totalBuyers.toLocaleString()}
+          </div>
+        </div>
+      </div>
 
-        {/* 商品表格 */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 text-slate-500 text-sm uppercase">
-              <tr>
-                <th className="px-6 py-4">商品信息</th>
-                <th className="px-6 py-4">类目</th>
-                <th className="px-6 py-4">价格</th>
-                <th className="px-6 py-4">成本</th>
-                <th className="px-6 py-4">库存</th>
-                <th className="px-6 py-4">销量</th>
-                <th className="px-6 py-4">平台</th>
-                <th className="px-6 py-4">状态</th>
-                <th className="px-6 py-4">操作</th>
+      {/* 数据表格 */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>加载中...</div>
+      ) : filteredData.length === 0 ? (
+        <div style={{
+          textAlign: 'center',
+          padding: 60,
+          background: 'white',
+          borderRadius: 12,
+          color: '#999',
+        }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
+          <div style={{ fontSize: 16 }}>暂无商品数据</div>
+          <div style={{ fontSize: 14, marginTop: 8 }}>请先导入商品日报数据</div>
+        </div>
+      ) : (
+        <div style={{
+          background: 'white',
+          borderRadius: 12,
+          overflow: 'hidden',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
+                <th style={{ padding: 16, textAlign: 'left' }}>日期</th>
+                <th style={{ padding: 16, textAlign: 'left' }}>商品 ID</th>
+                <th style={{ padding: 16, textAlign: 'left' }}>商品名称</th>
+                <th style={{ padding: 16, textAlign: 'right' }}>访客数</th>
+                <th style={{ padding: 16, textAlign: 'right' }}>支付买家数</th>
+                <th style={{ padding: 16, textAlign: 'right' }}>销售额</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredProducts.map((product) => (
-                <tr key={product.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div>
-                      <p className="font-medium text-slate-900">{product.name}</p>
-                      <p className="text-sm text-slate-500">{product.sku}</p>
-                    </div>
+            <tbody>
+              {filteredData.slice(0, 50).map((row, index) => (
+                <tr key={index} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  <td style={{ padding: 16 }}>{row.report_date}</td>
+                  <td style={{ padding: 16, fontFamily: 'monospace' }}>{row.product_id_external}</td>
+                  <td style={{ padding: 16, maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {row.product_name}
                   </td>
-                  <td className="px-6 py-4 text-slate-700">{product.category}</td>
-                  <td className="px-6 py-4 font-medium text-slate-900">¥{product.price}</td>
-                  <td className="px-6 py-4 text-slate-600">¥{product.cost}</td>
-                  <td className="px-6 py-4">
-                    <span className={product.stock < 50 ? 'text-red-600 font-medium' : 'text-slate-700'}>
-                      {product.stock}
-                    </span>
+                  <td style={{ padding: 16, textAlign: 'right' }}>{row.visitors?.toLocaleString() || 0}</td>
+                  <td style={{ padding: 16, textAlign: 'right', color: '#52c41a' }}>
+                    {row.paying_buyers?.toLocaleString() || 0}
                   </td>
-                  <td className="px-6 py-4 text-slate-700">{product.sales}</td>
-                  <td className="px-6 py-4">{getPlatformTags(product.platform)}</td>
-                  <td className="px-6 py-4">{getStatusBadge(product.status)}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleEdit(product)}
-                        className="text-orange-600 hover:text-orange-700 text-sm font-medium"
-                      >
-                        编辑
-                      </button>
-                      <button 
-                        onClick={() => toggleProductStatus(product.id)}
-                        className="text-slate-600 hover:text-slate-700 text-sm font-medium"
-                      >
-                        {product.status === 'offline' ? '上架' : '下架'}
-                      </button>
-                    </div>
+                  <td style={{ padding: 16, textAlign: 'right', fontWeight: 500, color: '#1890ff' }}>
+                    ¥{(row.paying_amount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {filteredProducts.length === 0 && (
-            <div className="p-12 text-center text-slate-500">
-              暂无符合条件的商品
+          {filteredData.length > 50 && (
+            <div style={{ padding: 16, textAlign: 'center', color: '#999', background: '#fafafa' }}>
+              显示前 50 条，共 {filteredData.length} 条数据
             </div>
           )}
-        </div>
-      </main>
-
-      {/* 编辑商品模态框 */}
-      {editingProduct && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4">
-            <div className="p-6 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-800">编辑商品</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">商品名称</label>
-                  <input
-                    type="text"
-                    value={editingProduct.name}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
-                  <input
-                    type="text"
-                    value={editingProduct.sku}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, sku: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">类目</label>
-                  <select
-                    value={editingProduct.category}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                  >
-                    {CATEGORIES.filter(c => c !== '全部类目').map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">售价</label>
-                  <input
-                    type="number"
-                    value={editingProduct.price}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, price: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">成本</label>
-                  <input
-                    type="number"
-                    value={editingProduct.cost}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, cost: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">库存</label>
-                  <input
-                    type="number"
-                    value={editingProduct.stock}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, stock: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="p-6 border-t border-slate-100 flex justify-end gap-3">
-              <button
-                onClick={() => setEditingProduct(null)}
-                className="px-4 py-2 text-slate-700 hover:bg-slate-100 rounded-lg"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 新增商品模态框 */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4">
-            <div className="p-6 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-800">新增商品</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">商品名称</label>
-                  <input type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">SKU</label>
-                  <input type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">类目</label>
-                  <select className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500">
-                    {CATEGORIES.filter(c => c !== '全部类目').map(cat => (
-                      <option key={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">售价</label>
-                  <input type="number" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">成本</label>
-                  <input type="number" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">初始库存</label>
-                  <input type="number" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500" />
-                </div>
-              </div>
-            </div>
-            <div className="p-6 border-t border-slate-100 flex justify-end gap-3">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-4 py-2 text-slate-700 hover:bg-slate-100 rounded-lg"
-              >
-                取消
-              </button>
-              <button
-                onClick={() => {
-                  setShowAddModal(false)
-                  showToast('商品已添加（演示）', 'success')
-                }}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
-              >
-                保存
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

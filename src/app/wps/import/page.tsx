@@ -230,7 +230,7 @@ export default function WPSImport() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="">
       {/* Toast 提示 */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg ${
@@ -259,7 +259,7 @@ export default function WPSImport() {
       </aside>
 
       {/* 主内容区 */}
-      <main className="flex-1 p-8">
+      <main className="p-8">
         {/* 头部 */}
         <header className="mb-8">
           <div className="flex justify-between items-center">

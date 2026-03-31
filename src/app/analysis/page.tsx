@@ -1,485 +1,331 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
 
-interface ProductDailyData {
-  id: number
-  shop_id: number
+interface Shop { id: number; name: string; platform: string; group_id: number }
+interface ShopGroup { id: number; name: string }
+interface ProductData {
   product_id_external: string
   product_name: string
-  report_date: string
-  visitors: number
-  views: number
-  paying_buyers: number
   paying_amount: number
-  paying_cv_rate: number
+  paying_buyers: number
+  visitors: number
   cart_users: number
-  fav_count: number
-  competitiveness_score: number
+  refund_amount: number
+  // 计算字段
+  avgOrderValue: number
+  cartRate: number
+  cvr: number
 }
 
-interface ShopOption {
-  id: number
-  name: string
-  platform: string
-}
+type SortKey = keyof ProductData | 'product_name'
+type SortOrder = 'asc' | 'desc'
 
-interface ProductOption {
-  product_id: string
-  product_name: string
-}
+const GROUPS = [
+  { id: 1, name: '海林组' },
+  { id: 2, name: '培君组' },
+  { id: 3, name: '淑贞组' },
+  { id: 4, name: '敏贞组' },
+]
 
-export default function ProductAnalysis() {
-  const router = useRouter()
-  const [shops, setShops] = useState<ShopOption[]>([])
-  const [products, setProducts] = useState<ProductOption[]>([])
+export default function AnalysisPage() {
+  const [selectedGroup, setSelectedGroup] = useState<string>('all')
   const [selectedShop, setSelectedShop] = useState<string>('')
-  const [selectedProduct, setSelectedProduct] = useState<string>('')
-  const [productSearch, setProductSearch] = useState<string>('')
-  const [filteredProducts, setFilteredProducts] = useState<ProductOption[]>([])
-  const [dateRange, setDateRange] = useState({ start: '2026-03-17', end: '2026-03-23' })
-  const [productData, setProductData] = useState<ProductDailyData[]>([])
+  const [dateRangeType, setDateRangeType] = useState<string>('7days')
+  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' })
+  const [productId, setProductId] = useState<string>('')
+  const [productData, setProductData] = useState<ProductData[]>([])
+  const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('paying_amount')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type })
-    setTimeout(() => setToast(null), 3000)
+  useEffect(() => { loadShops() }, [])
+  useEffect(() => { if (!loading && selectedShop) handleSearch() }, [loading, selectedShop, selectedGroup, dateRangeType, customDateRange])
+  useEffect(() => { if (productData.length > 0) setProductData(sortData(productData)) }, [sortKey, sortOrder])
+
+  async function loadShops() {
+    try {
+      const { data } = await supabase.from('shops').select('*').order('name')
+      if (data) { setShops(data) }
+    } catch (err) { console.error('加载店铺失败:', err) }
+    finally { setLoading(false) }
   }
 
-  // 加载店铺列表
-  useEffect(() => {
-    const loadShops = async () => {
-      const { data, error } = await supabase
-        .from('shops')
-        .select('id, name, platform')
-        .order('name')
-      if (data) setShops(data)
-    }
-    loadShops()
-  }, [])
+  function getDateRange() {
+    let start = new Date(customDateRange.start || new Date())
+    let end = new Date(customDateRange.end || new Date())
+    if (dateRangeType === 'yesterday') { const y = new Date(); y.setDate(y.getDate() - 1); start = new Date(y); end = new Date(y) }
+    else if (dateRangeType === '7days') { start = new Date(); start.setDate(start.getDate() - 6) }
+    else if (dateRangeType === '14days') { start = new Date(); start.setDate(start.getDate() - 13) }
+    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] }
+  }
 
-  // 加载商品列表（从所有导入模板中获取）
-  useEffect(() => {
-    if (selectedShop) {
-      loadProducts()
-    }
-  }, [selectedShop])
+  const getFilteredShops = () => selectedGroup === 'all' ? shops : shops.filter(s => s.group_id.toString() === selectedGroup)
 
-  // 筛选商品
-  useEffect(() => {
-    if (productSearch.trim()) {
-      const search = productSearch.toLowerCase()
-      const filtered = products.filter(p => 
-        p.product_id.toLowerCase().includes(search) ||
-        p.product_name.toLowerCase().includes(search)
-      )
-      setFilteredProducts(filtered)
-    } else {
-      setFilteredProducts(products)
-    }
-  }, [productSearch, products])
-
-  const loadProducts = async () => {
+  const handleSearch = async (productIdsInput?: string) => {
+    setSearching(true)
     try {
-      // 从商品日概况表获取商品
-      const { data: productDailyData } = await supabase
-        .from('product_daily_reports')
-        .select('product_id_external, product_name')
-        .eq('shop_id', selectedShop)
-        .limit(1000)
-
-      // 从销售数据表获取商品（如果有）
-      const { data: salesData } = await supabase
-        .from('sales_data')
-        .select('product_id_external, product_name')
-        .eq('shop_id', selectedShop)
-        .limit(1000)
-
-      // 合并去重
-      const allProducts = new Map<string, string>()
+      const { start, end } = getDateRange()
       
-      productDailyData?.forEach(p => {
-        if (p.product_id_external && !allProducts.has(p.product_id_external)) {
-          allProducts.set(p.product_id_external, p.product_name || p.product_id_external)
-        }
-      })
-
-      salesData?.forEach(p => {
-        if (p.product_id_external && !allProducts.has(p.product_id_external)) {
-          allProducts.set(p.product_id_external, p.product_name || p.product_id_external)
-        }
-      })
-
-      const productList = Array.from(allProducts.entries()).map(([id, name]) => ({
-        product_id: id,
-        product_name: name
-      })).sort((a, b) => a.product_name.localeCompare(b.product_name))
-
-      setProducts(productList)
-      setFilteredProducts(productList)
-    } catch (err) {
-      console.error('加载商品列表失败:', err)
-      setProducts([])
-      setFilteredProducts([])
-    }
-  }
-
-  // 加载商品数据
-  useEffect(() => {
-    if (selectedShop) {
-      loadProductData()
-    }
-  }, [selectedShop, selectedProduct, dateRange])
-
-  const loadProductData = async () => {
-    setLoading(true)
-    try {
+      // 从商品日概况表获取数据（不限制商品 ID，获取所有商品）
       let query = supabase
         .from('product_daily_reports')
         .select('*')
-        .eq('shop_id', selectedShop)
-        .gte('report_date', dateRange.start)
-        .lte('report_date', dateRange.end)
-        .order('report_date', { ascending: false })
-
-      // 如果选择了商品，只加载该商品的数据
-      if (selectedProduct) {
-        query = query.eq('product_id_external', selectedProduct)
+        .gte('stat_date', start)
+        .lte('stat_date', end)
+      
+      if (selectedShop) {
+        query = query.eq('shop_id', selectedShop)
+      } else if (selectedGroup !== 'all') {
+        const ids = shops.filter(s => s.group_id.toString() === selectedGroup).map(s => s.id)
+        if (ids.length > 0) query = query.in('shop_id', ids)
       }
-
+      
       const { data, error } = await query
-
+      
       if (error) throw error
-      setProductData(data || [])
-    } catch (err: any) {
-      console.error('加载商品数据失败:', err)
-      showToast('加载商品数据失败', 'error')
-      setProductData([])
+      
+      // 按商品 ID 聚合数据（去重）
+      const productMap = new Map<string, ProductData>()
+      data?.forEach((row: any) => {
+        const pid = row.product_id_external || 'UNKNOWN'
+        if (!productMap.has(pid)) {
+          productMap.set(pid, {
+            product_id_external: pid,
+            product_name: row.product_name || '',
+            paying_amount: 0,
+            paying_buyers: 0,
+            visitors: 0,
+            cart_users: 0,
+            refund_amount: 0,
+            avgOrderValue: 0,
+            cartRate: 0,
+            cvr: 0
+          })
+        }
+        const p = productMap.get(pid)!
+        p.paying_amount += row.paying_amount || 0
+        p.paying_buyers += row.paying_buyers || 0
+        p.visitors += row.visitors || 0
+        p.cart_users += row.cart_users || 0
+        p.refund_amount += row.refund_amount || 0
+      })
+      
+      // 计算指标
+      const result = Array.from(productMap.values()).map(p => ({
+        ...p,
+        avgOrderValue: p.paying_buyers > 0 ? p.paying_amount / p.paying_buyers : 0,
+        cartRate: p.visitors > 0 ? (p.cart_users / p.visitors * 100) : 0,
+        cvr: p.visitors > 0 ? (p.paying_buyers / p.visitors * 100) : 0
+      }))
+      
+      // 如果输入了商品 ID，则过滤
+      if (productIdsInput && productIdsInput.trim()) {
+        const filterIds = productIdsInput.split(',').map(id => id.trim()).filter(id => id)
+        const filtered = result.filter(p => filterIds.includes(p.product_id_external))
+        setProductData(sortData(filtered))
+      } else {
+        setProductData(sortData(result))
+      }
+    } catch (err) {
+      console.error('搜索失败:', err)
     } finally {
-      setLoading(false)
+      setSearching(false)
+    }
+  }
+  
+  // 排序函数
+  const sortData = (data: ProductData[]) => {
+    return [...data].sort((a, b) => {
+      const aVal = a[sortKey]
+      const bVal = b[sortKey]
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+      }
+      return sortOrder === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number)
+    })
+  }
+  
+  // 处理表头点击排序
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortOrder('desc')
     }
   }
 
-  // 计算汇总数据
-  const totalVisitors = productData.reduce((sum, p) => sum + (p.visitors || 0), 0)
-  const totalViews = productData.reduce((sum, p) => sum + (p.views || 0), 0)
-  const totalPayingBuyers = productData.reduce((sum, p) => sum + (p.paying_buyers || 0), 0)
-  const totalPayingAmount = productData.reduce((sum, p) => sum + (p.paying_amount || 0), 0)
-  const avgCvRate = productData.length > 0 
-    ? productData.reduce((sum, p) => sum + (p.paying_cv_rate || 0), 0) / productData.length 
-    : 0
-
-  // 商品排行榜（按支付金额）
-  const productRanking = productData
-    .reduce((acc, p) => {
-      const existing = acc.find(item => item.product_name === p.product_name)
-      if (existing) {
-        existing.paying_amount += p.paying_amount || 0
-        existing.visitors += p.visitors || 0
-        existing.paying_buyers += p.paying_buyers || 0
-      } else {
-        acc.push({
-          product_name: p.product_name || p.product_id_external || '未知商品',
-          product_id: p.product_id_external,
-          paying_amount: p.paying_amount || 0,
-          visitors: p.visitors || 0,
-          paying_buyers: p.paying_buyers || 0
-        })
-      }
-      return acc
-    }, [] as any[])
-    .sort((a, b) => b.paying_amount - a.paying_amount)
-    .slice(0, 10)
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>加载中...</div>
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg ${
-          toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
-        } text-white`}>
-          {toast.message}
-        </div>
-      )}
+    <div>
+      <h1 style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 24, color: '#1a1a2e' }}>📈 商品分析</h1>
 
-      {/* 侧边栏 */}
-      <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
-        <h2 className="text-2xl font-bold mb-8 text-orange-500">山麓众创科技</h2>
-        <nav className="space-y-4">
-          <a href="/" className="block py-2 px-4 hover:bg-slate-800 rounded">📊 经营看板</a>
-          <a href="/products" className="block py-2 px-4 hover:bg-slate-800 rounded">📦 商品管理</a>
-          <a href="/sales" className="block py-2 px-4 hover:bg-slate-800 rounded">🏪 店铺销售情况</a>
-          <a href="/import" className="block py-2 px-4 hover:bg-slate-800 rounded">📥 数据导入</a>
-          <a href="/analysis" className="block py-2 px-4 bg-slate-800 rounded">📈 商品分析</a>
-          <a href="/shops" className="block py-2 px-4 hover:bg-slate-800 rounded">📈 店铺每日盈亏</a>
-          <a href="/profit" className="block py-2 px-4 hover:bg-slate-800 rounded">💰 利润监控</a>
-          <a href="/settings" className="block py-2 px-4 hover:bg-slate-800 rounded">⚙️ 系统设置</a>
-        </nav>
-      </aside>
-
-      {/* 主内容区 */}
-      <main className="flex-1 p-8">
-        {/* 头部 */}
-        <header className="mb-8">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-slate-200 rounded-lg transition-colors"
-            >
-              ← 返回
-            </button>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-800">📈 商品分析</h1>
-              <p className="text-slate-500 mt-1">查看商品经营数据和趋势分析</p>
+      {/* 顶部筛选区 */}
+      <div style={{ background: 'white', padding: 24, borderRadius: 12, marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
+          {/* 店铺范围 */}
+          <div>
+            <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>店铺范围</label>
+            <select value={selectedGroup} onChange={(e) => { setSelectedGroup(e.target.value); setSelectedShop('') }} style={{ width: '100%', padding: '10 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }}>
+              <option value="all">全部店铺</option>
+              {GROUPS.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+          {/* 选择店铺 */}
+          <div>
+            <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>选择店铺</label>
+            <select value={selectedShop} onChange={(e) => setSelectedShop(e.target.value)} style={{ width: '100%', padding: '10 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }}>
+              <option value="">请选择店铺</option>
+              {getFilteredShops().map(s => <option key={s.id} value={s.id}>{s.name} ({s.platform})</option>)}
+            </select>
+          </div>
+          {/* 日期范围 */}
+          <div>
+            <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>日期范围</label>
+            <div style={{ display: 'flex', background: '#f0f0f0', borderRadius: 8, padding: 4 }}>
+              {['yesterday', '7days', '14days', 'custom'].map(r => (
+                <button key={r} onClick={() => setDateRangeType(r)} style={{ flex: 1, padding: '8 4', background: dateRangeType === r ? '#1890ff' : 'transparent', color: dateRangeType === r ? 'white' : '#666', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 500, fontSize: 13 }}>
+                  {r === 'yesterday' ? '昨日' : r === '7days' ? '近 7 天' : r === '14days' ? '近 14 天' : '自定义'}
+                </button>
+              ))}
             </div>
           </div>
-        </header>
-
-        {/* 筛选栏 */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* 店铺选择 */}
+          {/* 自定义日期 */}
+          {dateRangeType === 'custom' && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">选择店铺</label>
-              <select
-                value={selectedShop}
-                onChange={(e) => {
-                  setSelectedShop(e.target.value)
-                  setSelectedProduct('')
-                  setProductSearch('')
-                }}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-              >
-                <option value="">请选择店铺</option>
-                {shops.map(shop => (
-                  <option key={shop.id} value={shop.id}>
-                    {shop.name} ({shop.platform})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 商品搜索 */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">搜索商品（ID/名称）</label>
-              <input
-                type="text"
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                placeholder="输入商品 ID 或名称搜索..."
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-
-            {/* 商品选择 */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">选择商品</label>
-              <select
-                value={selectedProduct}
-                onChange={(e) => setSelectedProduct(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-              >
-                <option value="">全部商品</option>
-                {filteredProducts.map(product => (
-                  <option key={product.product_id} value={product.product_id}>
-                    {product.product_name} ({product.product_id})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* 日期范围 */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">日期范围</label>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                  className="flex-1 px-2 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-                <span className="text-slate-400">至</span>
-                <input
-                  type="date"
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                  className="flex-1 px-2 py-2 border border-slate-300 rounded-lg text-sm"
-                />
+              <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>自定义日期</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input type="date" value={customDateRange.start} onChange={(e) => setCustomDateRange({ ...customDateRange, start: e.target.value })} style={{ flex: 1, padding: '8 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }} />
+                <input type="date" value={customDateRange.end} onChange={(e) => setCustomDateRange({ ...customDateRange, end: e.target.value })} style={{ flex: 1, padding: '8 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }} />
               </div>
-            </div>
-          </div>
-
-          {/* 商品信息提示 */}
-          {selectedProduct && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-              <p className="text-sm text-blue-800">
-                🔍 当前查看商品：<strong>{products.find(p => p.product_id === selectedProduct)?.product_name || selectedProduct}</strong>
-                {productData.length > 0 && (
-                  <span className="ml-4">
-                    📊 共 <strong>{productData.length}</strong> 条数据
-                  </span>
-                )}
-              </p>
             </div>
           )}
         </div>
 
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">⏳</div>
-            <p className="text-slate-500">加载中...</p>
-          </div>
-        ) : productData.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-slate-100">
-            <div className="text-6xl mb-4">📦</div>
-            <p className="text-slate-500 mb-4">
-              {selectedShop ? '暂无商品数据' : '请先选择店铺'}
-            </p>
-            {selectedShop && (
-              <button
-                onClick={() => router.push('/import')}
-                className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
-              >
-                去导入数据
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            {/* 统计卡片 */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-sm">总访客数</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{totalVisitors.toLocaleString()}</p>
-              </div>
-              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-sm">总浏览量</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{totalViews.toLocaleString()}</p>
-              </div>
-              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-sm">支付买家数</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{totalPayingBuyers.toLocaleString()}</p>
-              </div>
-              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-sm">支付金额</p>
-                <p className="text-2xl font-bold text-green-600 mt-1">¥{totalPayingAmount.toLocaleString()}</p>
-              </div>
-              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-sm">平均转化率</p>
-                <p className="text-2xl font-bold text-orange-600 mt-1">{avgCvRate.toFixed(1)}%</p>
-              </div>
+        {/* 商品 ID 搜索 */}
+        <div style={{ borderTop: '1px solid #e8e8e8', paddingTop: 16 }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>商品 ID 搜索</label>
+              <input
+                type="text"
+                value={productId}
+                onChange={(e) => setProductId(e.target.value)}
+                placeholder="输入商品 ID 进行搜索..."
+                style={{ width: '100%', padding: '12 16', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 15 }}
+              />
             </div>
+            <button
+              onClick={() => handleSearch(productId)}
+              disabled={searching}
+              style={{
+                padding: '12 32',
+                fontSize: 16,
+                fontWeight: 600,
+                borderRadius: 8,
+                border: 'none',
+                background: searching ? '#d9d9d9' : '#1890ff',
+                color: 'white',
+                cursor: searching ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 16px rgba(24,144,255,0.3)',
+              }}
+            >
+              {searching ? '搜索中...' : '🔍 搜索'}
+            </button>
+          </div>
+        </div>
+      </div>
 
-            {/* 商品排行榜 */}
-            {productRanking.length > 0 && (
-              <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6">
-                <h2 className="text-xl font-bold text-slate-800 mb-4">🏆 商品排行榜（TOP 10）</h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-slate-500 text-sm">
-                      <tr>
-                        <th className="px-4 py-3">排名</th>
-                        <th className="px-4 py-3">商品名称</th>
-                        <th className="px-4 py-3">商品 ID</th>
-                        <th className="px-4 py-3 text-right">支付金额</th>
-                        <th className="px-4 py-3 text-right">访客数</th>
-                        <th className="px-4 py-3 text-right">支付买家数</th>
-                        <th className="px-4 py-3 text-right">转化率</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {productRanking.map((product, index) => (
-                        <tr key={product.product_id || index} className="hover:bg-slate-50">
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${
-                              index === 0 ? 'bg-yellow-100 text-yellow-700' :
-                              index === 1 ? 'bg-slate-100 text-slate-700' :
-                              index === 2 ? 'bg-orange-100 text-orange-700' :
-                              'bg-slate-50 text-slate-600'
-                            }`}>
-                              {index + 1}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 font-medium text-slate-900">{product.product_name}</td>
-                          <td className="px-4 py-3 text-slate-500 text-sm">{product.product_id}</td>
-                          <td className="px-4 py-3 text-right text-green-600 font-medium">
-                            ¥{product.paying_amount.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-700">
-                            {product.visitors.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-700">
-                            {product.paying_buyers.toLocaleString()}
-                          </td>
-                          <td className="px-4 py-3 text-right text-orange-600">
-                            {product.visitors > 0 ? ((product.paying_buyers / product.visitors) * 100).toFixed(1) : 0}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* 数据明细表 */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                <h2 className="text-lg font-bold text-slate-800">📋 商品数据明细</h2>
-                <p className="text-sm text-slate-500">
-                  {dateRange.start} 至 {dateRange.end} · 共 {productData.length} 条数据
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">日期</th>
-                      <th className="px-4 py-3">商品 ID</th>
-                      <th className="px-4 py-3">商品名称</th>
-                      <th className="px-4 py-3 text-right">访客数</th>
-                      <th className="px-4 py-3 text-right">浏览量</th>
-                      <th className="px-4 py-3 text-right">支付买家数</th>
-                      <th className="px-4 py-3 text-right">支付金额</th>
-                      <th className="px-4 py-3 text-right">转化率</th>
-                      <th className="px-4 py-3 text-right">加购人数</th>
-                      <th className="px-4 py-3 text-right">收藏数</th>
-                      <th className="px-4 py-3 text-right">竞争力评分</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {productData.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 font-medium text-slate-900">{item.report_date}</td>
-                        <td className="px-4 py-3 text-slate-500 text-sm">{item.product_id_external}</td>
-                        <td className="px-4 py-3 text-slate-700">{item.product_name || '-'}</td>
-                        <td className="px-4 py-3 text-right">{item.visitors.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{item.views.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{item.paying_buyers.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-green-600">¥{item.paying_amount.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-orange-600">{item.paying_cv_rate.toFixed(1)}%</td>
-                        <td className="px-4 py-3 text-right">{item.cart_users.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">{item.fav_count.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={`px-2 py-1 rounded text-xs ${
-                            (item.competitiveness_score || 0) >= 80 ? 'bg-green-100 text-green-700' :
-                            (item.competitiveness_score || 0) >= 60 ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {item.competitiveness_score || 0}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-      </main>
+      {/* 数据表格 */}
+      <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
+                <th style={{ padding: 12, textAlign: 'center', position: 'sticky', left: 0, background: '#fafafa', fontWeight: 600, minWidth: 150 }}>商品 ID</th>
+                <th onClick={() => handleSort('paying_amount')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>支付金额 {sortKey === 'paying_amount' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => handleSort('paying_buyers')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>支付人数 {sortKey === 'paying_buyers' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => handleSort('avgOrderValue')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>客单价 {sortKey === 'avgOrderValue' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => handleSort('visitors')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>访客 {sortKey === 'visitors' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => handleSort('cart_users')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>加购人数 {sortKey === 'cart_users' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => handleSort('cartRate')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>加购率 {sortKey === 'cartRate' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => handleSort('cvr')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>转化率 {sortKey === 'cvr' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => handleSort('refund_amount')} style={{ padding: 12, textAlign: 'center', fontWeight: 600, cursor: 'pointer', userSelect: 'none' }}>退款金额 {sortKey === 'refund_amount' ? (sortOrder === 'asc' ? '↑' : '↓') : ''}</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>未发货仅退单量</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>未发货仅退金额</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>退货退款单量</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>退货退款金额</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>补单金额</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>补单量</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>佣金</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>成交额（减刷单）</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>单量（减刷单）</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>成交额（减退款）</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>单量（减仅退款）</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>实际发出件数</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>成本</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>毛利</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>花费</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>点击量</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>加购</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>成交额</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>成交笔数</th>
+                <th style={{ padding: 12, textAlign: 'center', fontWeight: 600, color: '#999' }}>投产</th>
+              </tr>
+            </thead>
+            <tbody>
+              {productData.length === 0 ? (
+                <tr>
+                  <td colSpan={29} style={{ padding: 60, textAlign: 'center', color: '#999' }}>
+                    <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
+                    <div style={{ fontSize: 16 }}>暂无商品数据</div>
+                    <div style={{ fontSize: 14, marginTop: 8, color: '#666' }}>请选择店铺或输入商品 ID 搜索</div>
+                  </td>
+                </tr>
+              ) : (
+                productData.map((product, index) => (
+                  <tr key={product.product_id_external + '-' + index} style={{ borderBottom: '1px solid #f0f0f0', background: index % 2 === 0 ? 'white' : '#fafafa' }}>
+                    <td style={{ padding: 12, textAlign: 'center', position: 'sticky', left: 0, background: index % 2 === 0 ? 'white' : '#fafafa', fontWeight: 500, fontFamily: 'monospace' }}>{product.product_id_external}</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#1890ff', fontWeight: sortKey === 'paying_amount' ? 'bold' : 'normal' }}>¥{product.paying_amount.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'center', fontWeight: sortKey === 'paying_buyers' ? 'bold' : 'normal' }}>{product.paying_buyers}</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#13c2c2', fontWeight: sortKey === 'avgOrderValue' ? 'bold' : 'normal' }}>¥{product.avgOrderValue.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'center', fontWeight: sortKey === 'visitors' ? 'bold' : 'normal' }}>{product.visitors.toLocaleString()}</td>
+                    <td style={{ padding: 12, textAlign: 'center', fontWeight: sortKey === 'cart_users' ? 'bold' : 'normal' }}>{product.cart_users.toLocaleString()}</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#fa8c16', fontWeight: sortKey === 'cartRate' ? 'bold' : 'normal' }}>{product.cartRate.toFixed(2)}%</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#722ed1', fontWeight: sortKey === 'cvr' ? 'bold' : 'normal' }}>{product.cvr.toFixed(2)}%</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#ff4d4f', fontWeight: sortKey === 'refund_amount' ? 'bold' : 'normal' }}>¥{product.refund_amount.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#fa8c16' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#fa8c16' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#52c41a' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center' }}>-</td>
+                    <td style={{ padding: 12, textAlign: 'center', color: '#999' }}>-</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

@@ -302,7 +302,7 @@ export default function ShopDailyData() {
   const avgReturnRate = (data.reduce((sum, row) => sum + row.returnRate, 0) / data.length).toFixed(1)
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="">
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg ${toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'} text-white`}>
           {toast.message}
@@ -320,7 +320,7 @@ export default function ShopDailyData() {
         </nav>
       </aside>
 
-      <main className="flex-1 p-8">
+      <main className="p-8">
         <header className="mb-8">
           <div className="flex items-center gap-4 mb-4">
             <button onClick={() => router.push('/shops')} className="text-slate-600 hover:text-slate-800">← 返回</button>

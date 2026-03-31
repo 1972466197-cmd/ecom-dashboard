@@ -1,0 +1,30 @@
+// shops-page-fix.txt - 用于修复 /shops 页面的表格部分
+// 将刷单佣金列改为可编辑，推广费改为只读
+
+// 替换第 819 行（刷单佣金列）
+<td className="px-4 py-3 text-right text-orange-600">
+  {editingCell?.date === day.date && editingCell?.field === 'commission' ? (
+    <input
+      type="number"
+      value={editingValue}
+      onChange={(e) => setEditingValue(e.target.value)}
+      onBlur={handleCellBlur}
+      onKeyDown={handleCellKeyDown}
+      className="w-24 px-2 py-1 border border-orange-500 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+      autoFocus
+    />
+  ) : (
+    <span 
+      onClick={() => handleCellEdit(day.date, 'commission', day.commission)}
+      className="cursor-pointer hover:bg-orange-100 px-2 py-1 rounded"
+      title="点击编辑"
+    >
+      ¥{day.commission.toLocaleString()}
+    </span>
+  )}
+</td>
+
+// 替换第 837 行（推广费列 - 只读）
+<td className="px-4 py-3 text-right text-orange-600 bg-slate-50" title="从商品日概况报表自动计算（ad_cost_total + ad_keyword_cost + ad_audience_cost + ad_smart_cost）">
+  <span className="cursor-not-allowed">¥{day.adCost.toLocaleString()} 🔒</span>
+</td>

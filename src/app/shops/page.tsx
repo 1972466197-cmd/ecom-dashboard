@@ -1,33 +1,26 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
 
-interface SalesData {
+interface ShopDailyReport {
   id: number
   shop_id: number
-  date: string
-  pay_amount: number
-  pay_orders: number
+  stat_date: string
+  paying_amount: number
+  paying_buyers: number
   ad_cost_total: number
-  net_profit: number
-  gross_profit: number
-  total_cost: number
-  logistics_fee: number
-  platform_fee: number
-  labor_cost: number
-  return_cost: number
-  fake_orders_amount: number
-  fake_orders_count: number
-  commission: number
+  ad_keyword_cost: number
+  ad_smart_cost: number
   refund_amount: number
 }
 
-interface ShopGroup {
-  id: number
-  name: string
-  leader_name: string
+interface ShopManualData {
+  shop_id: number
+  stat_date: string
+  cost: number
+  return_cost: number
+  commission: number
 }
 
 interface Shop {
@@ -37,27 +30,48 @@ interface Shop {
   group_id: number
 }
 
-type DateRangeType = '1day' | '7days' | '14days' | 'custom'
-type SelectionType = 'all' | 'group' | 'shop'
+interface DailyData {
+  date: string
+  sales: number
+  orders: number
+  refund: number
+  adCost: number
+  cost: number
+  returnCost: number
+  commission: number
+  netSales: number
+  fakeAmount: number
+  fakeOrders: number
+  commissionAmount: number
+  shippingCost: number
+  platformFee: number
+  laborCost: number
+  roi: number
+  grossMargin: number
+  refundRate: number
+  profit: number
+  editingCost?: boolean
+  editingReturnCost?: boolean
+  editingCommission?: boolean
+  tempCost?: number
+  tempReturnCost?: number
+  tempCommission?: number
+}
+
+const GROUPS = [
+  { id: 1, name: '海林组' },
+  { id: 2, name: '培君组' },
+  { id: 3, name: '淑贞组' },
+  { id: 4, name: '敏贞组' },
+]
 
 export default function ShopDailyProfit() {
-  const router = useRouter()
-  
-  // 筛选状态
-  const [selectionType, setSelectionType] = useState<SelectionType>('all')
-  const [selectedGroup, setSelectedGroup] = useState<string>('')
+  const [selectedGroup, setSelectedGroup] = useState<string>('all')
   const [selectedShop, setSelectedShop] = useState<string>('')
-  const [shopSearch, setShopSearch] = useState<string>('')
-  const [dateRangeType, setDateRangeType] = useState<DateRangeType>('7days')
-  const [customDateRange, setCustomDateRange] = useState({
-    start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
-  })
-  
-  // 数据状态
-  const [groups, setGroups] = useState<ShopGroup[]>([])
+  const [dateRangeType, setDateRangeType] = useState<string>('7days')
+  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' })
   const [shops, setShops] = useState<Shop[]>([])
-  const [salesData, setSalesData] = useState<SalesData[]>([])
+  const [dailyData, setDailyData] = useState<DailyData[]>([])
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
@@ -66,545 +80,435 @@ export default function ShopDailyProfit() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // 计算日期范围
-  const getDateRange = () => {
-    const end = customDateRange.end
-    let start = customDateRange.start
-    
-    if (dateRangeType === '1day') {
-      start = end
-    } else if (dateRangeType === '7days') {
-      const d = new Date(end)
-      d.setDate(d.getDate() - 6)
-      start = d.toISOString().split('T')[0]
-    } else if (dateRangeType === '14days') {
-      const d = new Date(end)
-      d.setDate(d.getDate() - 13)
-      start = d.toISOString().split('T')[0]
-    }
-    
-    return { start, end }
+  const canEdit = selectedShop && selectedShop !== 'all' && selectedShop !== ''
+
+  useEffect(() => { loadShops() }, [])
+  useEffect(() => { if (!loading) loadData() }, [selectedGroup, selectedShop, dateRangeType, customDateRange])
+
+  async function loadShops() {
+    try {
+      const { data } = await supabase.from('shops').select('*').order('name')
+      if (data) { setShops(data) }
+    } catch (err) { console.error('加载店铺失败:', err) }
+    finally { setLoading(false) }
   }
 
-  // 加载店铺和分组
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // 加载分组
-        const { data: groupsData } = await supabase
-          .from('shop_groups')
-          .select('*')
-          .order('sort_order')
-        
-        if (groupsData) setGroups(groupsData)
-
-        // 加载店铺
-        const { data: shopsData } = await supabase
-          .from('shops')
-          .select('*')
-          .order('name')
-        
-        if (shopsData) setShops(shopsData)
-      } catch (err) {
-        console.error('加载数据失败:', err)
-      }
-    }
-    loadData()
-  }, [])
-
-  // 加载销售数据
-  useEffect(() => {
-    loadSalesData()
-  }, [selectionType, selectedGroup, selectedShop, dateRangeType, customDateRange])
-
-  const loadSalesData = async () => {
+  async function loadData() {
     setLoading(true)
     try {
       const { start, end } = getDateRange()
       
-      let query = supabase
-        .from('sales_data')
-        .select('*')
-        .gte('date', start)
-        .lte('date', end)
+      let shopQuery = supabase.from('shop_daily_reports').select('*').gte('stat_date', start).lte('stat_date', end)
+      if (selectedShop) shopQuery = shopQuery.eq('shop_id', selectedShop)
+      else if (selectedGroup !== 'all') {
+        const ids = shops.filter(s => s.group_id.toString() === selectedGroup).map(s => s.id)
+        if (ids.length > 0) shopQuery = shopQuery.in('shop_id', ids)
+      }
+      const { data: shopReports } = await shopQuery
+
+      let manualQuery = supabase.from('shop_daily_manual').select('*').gte('stat_date', start).lte('stat_date', end)
+      if (selectedShop) manualQuery = manualQuery.eq('shop_id', selectedShop)
+      else if (selectedGroup !== 'all') {
+        const ids = shops.filter(s => s.group_id.toString() === selectedGroup).map(s => s.id)
+        if (ids.length > 0) manualQuery = manualQuery.in('shop_id', ids)
+      }
+      const { data: manualData } = await manualQuery
+
+      // 从 orders 表获取刷单数据（先查所有，前端过滤日期和 is_delivery）
+      let fakeQuery = supabase.from('orders').select('created_at, buyer_paid_amount, quantity, shop_id, is_delivery')
+      if (selectedShop) fakeQuery = fakeQuery.eq('shop_id', selectedShop)
+      else if (selectedGroup !== 'all') {
+        const ids = shops.filter(s => s.group_id.toString() === selectedGroup).map(s => s.id)
+        if (ids.length > 0) fakeQuery = fakeQuery.in('shop_id', ids)
+      }
+      const { data: allOrders } = await fakeQuery
+      console.log('[DEBUG] orders query:', {
+        dateRange: `${start} to ${end}`,
+        totalRecords: allOrders?.length || 0,
+        shop: selectedShop || 'all'
+      })
+      // 前端过滤：日期范围 + is_delivery=false（处理时区问题）
+      const fakeOrders = allOrders?.filter((o: any) => {
+        const isDeliveryFalse = o.is_delivery === false || o.is_delivery === 'false'
+        if (!isDeliveryFalse) return false
+        // 将 ISO 日期转换为本地日期（+8 时区）
+        const orderDate = o.created_at ? new Date(o.created_at).toISOString().split('T')[0] : null
+        return orderDate && orderDate >= start && orderDate <= end
+      }) || []
+      console.log('[DEBUG] fake orders:', {
+        count: fakeOrders.length,
+        totalAmount: fakeOrders.reduce((sum, o) => sum + (o.buyer_paid_amount || 0), 0),
+        totalQty: fakeOrders.reduce((sum, o) => sum + (o.quantity || 0), 0)
+      })
+
+      const dailyMap = new Map()
+      const cur = new Date(start), endD = new Date(end)
+      while (cur <= endD) {
+        const d = cur.toISOString().split('T')[0]
+        dailyMap.set(d, { 
+          date: d, sales: 0, orders: 0, refund: 0, adCost: 0, 
+          cost: 0, returnCost: 0, commission: 0,
+          netSales: 0, fakeAmount: 0, fakeOrders: 0, commissionAmount: 0, 
+          shippingCost: 0, platformFee: 0, laborCost: 0, 
+          roi: 0, grossMargin: 0, refundRate: 0, profit: 0,
+          editingCost: false, editingReturnCost: false, editingCommission: false 
+        })
+        cur.setDate(cur.getDate() + 1)
+      }
+
+      if (shopReports) shopReports.forEach((r: any) => {
+        const d = dailyMap.get(r.stat_date)
+        if (d) { 
+          d.sales += r.paying_amount || 0
+          d.orders += r.paying_buyers || 0
+          d.refund += r.refund_amount || 0
+          d.adCost += (r.ad_cost_total || 0) + (r.ad_keyword_cost || 0) + (r.ad_smart_cost || 0)
+        }
+      })
+
+      if (manualData) manualData.forEach((m: any) => {
+        const d = dailyMap.get(m.stat_date)
+        if (d) { 
+          d.cost = m.cost || 0
+          d.returnCost = m.return_cost || 0
+          d.commission = m.commission || 0
+        }
+      })
+
+      // 从 orders 表获取刷单金额和刷单量
+      if (fakeOrders) fakeOrders.forEach((f: any) => {
+        const dt = f.created_at?.split('T')[0]
+        const d = dailyMap.get(dt)
+        if (d) { 
+          d.fakeAmount += f.buyer_paid_amount || 0    // 刷单金额从 orders 获取
+          d.fakeOrders += f.quantity || 0             // 刷单量从 orders 获取
+          // commissionAmount 不变，从 manualData 获取（手动填写）
+        }
+      })
       
-      if (selectionType === 'shop' && selectedShop) {
-        query = query.eq('shop_id', selectedShop)
-      } else if (selectionType === 'group' && selectedGroup) {
-        // 获取该分组下的所有店铺 ID
-        const groupShopIds = shops.filter(s => s.group_id.toString() === selectedGroup).map(s => s.id)
-        if (groupShopIds.length > 0) {
-          query = query.in('shop_id', groupShopIds)
-        } else {
-          setSalesData([])
-          setLoading(false)
-          return
+      // 从 shop_daily_manual 表获取手动填写的佣金
+      if (manualData) manualData.forEach((m: any) => {
+        const dt = m.stat_date
+        const d = dailyMap.get(dt)
+        if (d) { 
+          d.commissionAmount = m.commission || 0      // 刷单佣金保持手动填写
+        }
+      })
+
+      const result = Array.from(dailyMap.values()).map((data: any) => {
+        const netSales = data.sales - data.refund - data.fakeAmount
+        const roi = data.adCost > 0 ? (netSales / data.adCost) : 0
+        const grossMargin = netSales > 0 ? ((1 - data.cost / netSales) * 100) : 0
+        const refundRate = data.sales > 0 ? ((data.refund / data.sales) * 100) : 0
+        const profit = netSales - data.commission - data.cost - data.adCost - data.shippingCost - data.platformFee - data.laborCost + data.returnCost
+        return { ...data, netSales, roi, grossMargin, refundRate, profit }
+      })
+
+      result.sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''))
+      setDailyData(result)
+    } catch (err) { console.error('加载失败:', err) }
+    finally { setLoading(false) }
+  }
+
+  function getDateRange() {
+    let start = new Date(customDateRange.start || new Date())
+    let end = new Date(customDateRange.end || new Date())
+    if (dateRangeType === 'yesterday') { const y = new Date(); y.setDate(y.getDate() - 1); start = new Date(y); end = new Date(y) }
+    else if (dateRangeType === '7days') { start = new Date(); start.setDate(start.getDate() - 6) }
+    else if (dateRangeType === '14days') { start = new Date(); start.setDate(start.getDate() - 13) }
+    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] }
+  }
+
+  const getFilteredShops = () => selectedGroup === 'all' ? shops : shops.filter(s => s.group_id.toString() === selectedGroup)
+
+  const saveManualData = async (date: string, field: 'cost' | 'returnCost' | 'commission', value: number) => {
+    if (!canEdit) return
+    const shopId = Number(selectedShop)
+    if (!shopId) return
+
+    try {
+      const dbField = field === 'cost' ? 'cost' : field === 'returnCost' ? 'return_cost' : 'commission'
+      const { error } = await supabase.from('shop_daily_manual').upsert({
+        shop_id: shopId,
+        stat_date: date,
+        [dbField]: value,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'shop_id,stat_date' })
+
+      if (error) throw error
+
+      setDailyData(prev => prev.map(d => {
+        if (d.date === date) {
+          const updated = { 
+            ...d, 
+            [field]: value,
+            [`editing${field.charAt(0).toUpperCase() + field.slice(1)}`]: false,
+            [`temp${field.charAt(0).toUpperCase() + field.slice(1)}`]: undefined
+          }
+          const netSales = updated.sales - updated.refund - updated.fakeAmount
+          updated.netSales = netSales
+          updated.roi = updated.adCost > 0 ? (netSales / updated.adCost) : 0
+          updated.grossMargin = netSales > 0 ? ((1 - updated.cost / netSales) * 100) : 0
+          updated.refundRate = updated.sales > 0 ? ((updated.refund / updated.sales) * 100) : 0
+          updated.profit = netSales - updated.commission - updated.cost - updated.adCost - updated.shippingCost - updated.platformFee - updated.laborCost + updated.returnCost
+          return updated
+        }
+        return d
+      }))
+
+      showToast('保存成功', 'success')
+    } catch (err: any) {
+      console.error('保存失败:', err)
+      showToast('保存失败：' + err.message, 'error')
+    }
+  }
+
+  const handleEditClick = (date: string, field: 'cost' | 'returnCost' | 'commission', currentValue: number) => {
+    setDailyData(prev => prev.map(d => {
+      if (d.date === date) {
+        return {
+          ...d,
+          [`editing${field.charAt(0).toUpperCase() + field.slice(1)}`]: true,
+          [`temp${field.charAt(0).toUpperCase() + field.slice(1)}`]: currentValue
         }
       }
-      // selectionType === 'all' 时不加 shop_id 条件
-      
-      const { data, error } = await query.order('date', { ascending: false })
-      
-      if (error) throw error
-      setSalesData(data || [])
-    } catch (err: any) {
-      console.error('加载销售数据失败:', err)
-      setSalesData([])
-    } finally {
-      setLoading(false)
-    }
+      return d
+    }))
   }
 
-  // 筛选店铺（用于搜索）
-  const filteredShops = shopSearch
-    ? shops.filter(s => s.name.toLowerCase().includes(shopSearch.toLowerCase()))
-    : shops
-
-  // 筛选店铺（用于小组选择）
-  const groupFilteredShops = selectedGroup
-    ? shops.filter(s => s.group_id.toString() === selectedGroup)
-    : shops
-
-  // 计算汇总数据
-  const totalSales = salesData.reduce((sum, d) => sum + (d.pay_amount || 0), 0)
-  const totalOrders = salesData.reduce((sum, d) => sum + (d.pay_orders || 0), 0)
-  const totalCost = salesData.reduce((sum, d) => sum + (d.total_cost || 0), 0)
-  const totalFakeAmount = salesData.reduce((sum, d) => sum + (d.fake_orders_amount || 0), 0)
-  const totalFakeOrders = salesData.reduce((sum, d) => sum + (d.fake_orders_count || 0), 0)
-  const totalCommission = salesData.reduce((sum, d) => sum + (d.commission || 0), 0)
-  const totalRefund = salesData.reduce((sum, d) => sum + (d.refund_amount || 0), 0)
-  const totalReturnCost = salesData.reduce((sum, d) => sum + (d.return_cost || 0), 0)
-  const totalAdCost = salesData.reduce((sum, d) => sum + (d.ad_cost_total || 0), 0)
-  const totalLogistics = salesData.reduce((sum, d) => sum + (d.logistics_fee || 0), 0)
-  const totalPlatformFee = salesData.reduce((sum, d) => sum + (d.platform_fee || 0), 0)
-  const totalLabor = salesData.reduce((sum, d) => sum + (d.labor_cost || 0), 0)
-  const totalProfit = salesData.reduce((sum, d) => sum + (d.net_profit || 0), 0)
-  const totalGrossProfit = salesData.reduce((sum, d) => sum + (d.gross_profit || 0), 0)
-
-  // 计算比率
-  const roi = totalAdCost > 0 ? (totalSales / totalAdCost).toFixed(2) : '0.00'
-  const grossMargin = totalSales > 0 ? ((totalGrossProfit / totalSales) * 100).toFixed(1) : '0.0'
-  const refundRate = totalSales > 0 ? ((totalRefund / totalSales) * 100).toFixed(1) : '0.0'
-
-  // 按日期分组汇总
-  const dailyData = salesData.reduce((acc, d) => {
-    const date = d.date
-    if (!acc[date]) {
-      acc[date] = {
-        date,
-        sales: 0,
-        orders: 0,
-        cost: 0,
-        fakeAmount: 0,
-        fakeOrders: 0,
-        commission: 0,
-        refund: 0,
-        returnCost: 0,
-        adCost: 0,
-        logistics: 0,
-        platformFee: 0,
-        labor: 0,
-        profit: 0,
-        grossProfit: 0
+  const handleEditChange = (date: string, field: 'cost' | 'returnCost' | 'commission', value: string) => {
+    const numValue = parseFloat(value) || 0
+    setDailyData(prev => prev.map(d => {
+      if (d.date === date) {
+        return { ...d, [`temp${field.charAt(0).toUpperCase() + field.slice(1)}`]: numValue }
       }
-    }
-    acc[date].sales += d.pay_amount || 0
-    acc[date].orders += d.pay_orders || 0
-    acc[date].cost += d.total_cost || 0
-    acc[date].fakeAmount += d.fake_orders_amount || 0
-    acc[date].fakeOrders += d.fake_orders_count || 0
-    acc[date].commission += d.commission || 0
-    acc[date].refund += d.refund_amount || 0
-    acc[date].returnCost += d.return_cost || 0
-    acc[date].adCost += d.ad_cost_total || 0
-    acc[date].logistics += d.logistics_fee || 0
-    acc[date].platformFee += d.platform_fee || 0
-    acc[date].labor += d.labor_cost || 0
-    acc[date].profit += d.net_profit || 0
-    acc[date].grossProfit += d.gross_profit || 0
-    return acc
-  }, {} as any)
-
-  const dailyList = Object.values(dailyData).sort((a: any, b: any) => 
-    b.date.localeCompare(a.date)
-  )
-
-  const { start, end } = getDateRange()
-  const dayCount = Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / (24 * 60 * 60 * 1000)) + 1
-
-  // 获取当前选择的标题
-  const getSelectionTitle = () => {
-    if (selectionType === 'all') return '全部店铺'
-    if (selectionType === 'group' && selectedGroup) {
-      const group = groups.find(g => g.id.toString() === selectedGroup)
-      return group?.name || '未知分组'
-    }
-    if (selectionType === 'shop' && selectedShop) {
-      const shop = shops.find(s => s.id.toString() === selectedShop)
-      return shop?.name || '未知店铺'
-    }
-    return '请选择'
+      return d
+    }))
   }
+
+  const handleEditSave = (date: string, field: 'cost' | 'returnCost' | 'commission') => {
+    const data = dailyData.find(d => d.date === date)
+    if (!data) return
+    const tempField = `temp${field.charAt(0).toUpperCase() + field.slice(1)}` as keyof DailyData
+    const value = data[tempField] as number || 0
+    saveManualData(date, field, value)
+  }
+
+  const handleEditCancel = (date: string, field: 'cost' | 'returnCost' | 'commission') => {
+    setDailyData(prev => prev.map(d => {
+      if (d.date === date) {
+        return {
+          ...d,
+          [`editing${field.charAt(0).toUpperCase() + field.slice(1)}`]: false,
+          [`temp${field.charAt(0).toUpperCase() + field.slice(1)}`]: undefined
+        }
+      }
+      return d
+    }))
+  }
+
+  const totalSales = dailyData.reduce((s, d) => s + d.sales, 0)
+  const totalOrders = dailyData.reduce((s, d) => s + d.orders, 0)
+  const totalNetSales = dailyData.reduce((s, d) => s + d.netSales, 0)
+  const totalCost = dailyData.reduce((s, d) => s + d.cost, 0)
+  const totalRefund = dailyData.reduce((s, d) => s + d.refund, 0)
+  const totalAdCost = dailyData.reduce((s, d) => s + d.adCost, 0)
+  const totalProfit = dailyData.reduce((s, d) => s + d.profit, 0)
+  const avgRoi = dailyData.length > 0 ? dailyData.reduce((s, d) => s + d.roi, 0) / dailyData.length : 0
+  const avgGrossMargin = dailyData.length > 0 ? dailyData.reduce((s, d) => s + d.grossMargin, 0) / dailyData.length : 0
+  const avgRefundRate = dailyData.length > 0 ? dailyData.reduce((s, d) => s + d.refundRate, 0) / dailyData.length : 0
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>加载中...</div>
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div>
+      <h1 style={{ fontSize: 28, fontWeight: 'bold', marginBottom: 24, color: '#1a1a2e' }}>📉 店铺每日盈亏</h1>
+
+      {!canEdit && (
+        <div style={{
+          padding: '12 20',
+          marginBottom: 20,
+          borderRadius: 8,
+          background: '#fff3cd',
+          color: '#856404',
+          border: '1px solid #ffc107',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <span>请先选择具体店铺，选择后才能编辑成本、刷单佣金和退回成本</span>
+        </div>
+      )}
+
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg ${
-          toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'
-        } text-white`}>
+        <div style={{
+          padding: '12 20',
+          marginBottom: 20,
+          borderRadius: 8,
+          background: toast.type === 'success' ? '#d4edda' : '#f8d7da',
+          color: toast.type === 'success' ? '#155724' : '#721c24',
+          border: `1px solid ${toast.type === 'success' ? '#c3e6cb' : '#f5c6cb'}`,
+        }}>
           {toast.message}
         </div>
       )}
 
-      {/* 侧边栏 */}
-      <aside className="w-64 bg-slate-900 text-white p-6 hidden md:block">
-        <h2 className="text-2xl font-bold mb-8 text-orange-500">山麓众创科技</h2>
-        <nav className="space-y-4">
-          <a href="/" className="block py-2 px-4 hover:bg-slate-800 rounded">📊 经营看板</a>
-          <a href="/products" className="block py-2 px-4 hover:bg-slate-800 rounded">📦 商品管理</a>
-          <a href="/sales" className="block py-2 px-4 hover:bg-slate-800 rounded">🏪 店铺销售情况</a>
-          <a href="/import" className="block py-2 px-4 hover:bg-slate-800 rounded">📥 数据导入</a>
-          <a href="/analysis" className="block py-2 px-4 hover:bg-slate-800 rounded">📈 商品分析</a>
-          <a href="/shops" className="block py-2 px-4 bg-slate-800 rounded">📈 店铺每日盈亏</a>
-          <a href="/profit" className="block py-2 px-4 hover:bg-slate-800 rounded">💰 利润监控</a>
-          <a href="/settings" className="block py-2 px-4 hover:bg-slate-800 rounded">⚙️ 系统设置</a>
-        </nav>
-      </aside>
-
-      {/* 主内容区 */}
-      <main className="flex-1 p-8">
-        {/* 头部 */}
-        <header className="mb-8">
-          <div className="flex items-center gap-4">
-            <button onClick={() => router.back()} className="p-2 hover:bg-slate-200 rounded-lg transition-colors">← 返回</button>
-            <div>
-              <h1 className="text-3xl font-bold text-slate-800">📈 店铺每日盈亏</h1>
-              <p className="text-slate-500 mt-1">
-                查看店铺每日经营利润和成本明细
-                <span className="ml-2 text-xs text-blue-600">💡 数据来自「销售数据模板」或「店铺日概况报表」导入</span>
-              </p>
+      <div style={{ background: 'white', padding: 24, borderRadius: 12, marginBottom: 24, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>店铺范围</label>
+            <select value={selectedGroup} onChange={(e) => { setSelectedGroup(e.target.value); setSelectedShop('') }} style={{ width: '100%', padding: '10 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }}>
+              <option value="all">全部店铺</option>
+              {GROUPS.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>选择店铺</label>
+            <select value={selectedShop} onChange={(e) => setSelectedShop(e.target.value)} style={{ width: '100%', padding: '10 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }}>
+              <option value="">请选择店铺</option>
+              {getFilteredShops().map(s => <option key={s.id} value={s.id}>{s.name} ({s.platform})</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>日期范围</label>
+            <div style={{ display: 'flex', background: '#f0f0f0', borderRadius: 8, padding: 4 }}>
+              {['yesterday', '7days', '14days', 'custom'].map(r => (
+                <button key={r} onClick={() => setDateRangeType(r)} style={{ flex: 1, padding: '8 4', background: dateRangeType === r ? '#1890ff' : 'transparent', color: dateRangeType === r ? 'white' : '#666', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 500, fontSize: 13 }}>
+                  {r === 'yesterday' ? '昨日' : r === '7days' ? '近 7 天' : r === '14days' ? '近 14 天' : '自定义'}
+                </button>
+              ))}
             </div>
           </div>
-        </header>
-
-        {/* 筛选栏 */}
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            {/* 选择类型 */}
+          {dateRangeType === 'custom' && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">查看范围</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setSelectionType('all'); setSelectedGroup(''); setSelectedShop(''); }}
-                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${
-                    selectionType === 'all'
-                      ? 'bg-orange-500 text-white border-orange-500'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  全部店铺
-                </button>
-                <button
-                  onClick={() => { setSelectionType('group'); setSelectedShop(''); }}
-                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${
-                    selectionType === 'group'
-                      ? 'bg-orange-500 text-white border-orange-500'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  按分组
-                </button>
-                <button
-                  onClick={() => { setSelectionType('shop'); setSelectedGroup(''); }}
-                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${
-                    selectionType === 'shop'
-                      ? 'bg-orange-500 text-white border-orange-500'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  按店铺
-                </button>
+              <label style={{ display: 'block', fontSize: 15, color: '#333', marginBottom: 8, fontWeight: 500 }}>自定义日期</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input type="date" value={customDateRange.start} onChange={(e) => setCustomDateRange({ ...customDateRange, start: e.target.value })} style={{ flex: 1, padding: '8 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }} />
+                <input type="date" value={customDateRange.end} onChange={(e) => setCustomDateRange({ ...customDateRange, end: e.target.value })} style={{ flex: 1, padding: '8 12', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 14 }} />
               </div>
             </div>
+          )}
+        </div>
+      </div>
 
-            {/* 分组选择 */}
-            {selectionType === 'group' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">选择小组</label>
-                <select
-                  value={selectedGroup}
-                  onChange={(e) => setSelectedGroup(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="">请选择小组</option>
-                  {groups.map(group => (
-                    <option key={group.id} value={group.id}>{group.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 24 }}>
+        <StatCard title="销售额" value={`¥${totalSales.toFixed(2)}`} color="#1890ff" />
+        <StatCard title="订单量" value={totalOrders} color="#52c41a" />
+        <StatCard title="净销售额" value={`¥${totalNetSales.toFixed(2)}`} color="#722ed1" />
+        <StatCard title="发货成本" value={`¥${totalCost.toFixed(2)}`} color="#fa8c16" />
+        <StatCard title="退款金额" value={`¥${totalRefund.toFixed(2)}`} color="#ff4d4f" />
+        <StatCard title="推广费" value={`¥${totalAdCost.toFixed(2)}`} color="#faad14" />
+        <StatCard title="ROI" value={avgRoi.toFixed(2)} color="#eb2f96" />
+        <StatCard title="毛利率" value={`${avgGrossMargin.toFixed(2)}%`} color="#13c2c2" />
+        <StatCard title="退货率" value={`${avgRefundRate.toFixed(2)}%`} color="#ff7a45" />
+        <StatCard title="利润" value={`¥${totalProfit.toFixed(2)}`} color={totalProfit >= 0 ? '#52c41a' : '#ff4d4f'} />
+      </div>
 
-            {/* 店铺选择 + 搜索 */}
-            {selectionType === 'shop' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">搜索店铺</label>
-                <input
-                  type="text"
-                  value={shopSearch}
-                  onChange={(e) => setShopSearch(e.target.value)}
-                  placeholder="输入店铺名称搜索..."
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                />
-              </div>
-            )}
-
-            {selectionType === 'shop' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">选择店铺</label>
-                <select
-                  value={selectedShop}
-                  onChange={(e) => setSelectedShop(e.target.value)}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500"
-                >
-                  <option value="">请选择店铺</option>
-                  {filteredShops.map(shop => (
-                    <option key={shop.id} value={shop.id}>
-                      {shop.name} ({shop.platform})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* 日期范围 */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">日期范围</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setDateRangeType('1day')}
-                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${
-                    dateRangeType === '1day'
-                      ? 'bg-orange-500 text-white border-orange-500'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  1 天
-                </button>
-                <button
-                  onClick={() => setDateRangeType('7days')}
-                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${
-                    dateRangeType === '7days'
-                      ? 'bg-orange-500 text-white border-orange-500'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  7 天
-                </button>
-                <button
-                  onClick={() => setDateRangeType('14days')}
-                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${
-                    dateRangeType === '14days'
-                      ? 'bg-orange-500 text-white border-orange-500'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  14 天
-                </button>
-              </div>
-            </div>
-
-            {/* 自定义日期 */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">自定义日期</label>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={customDateRange.start}
-                  onChange={(e) => {
-                    setCustomDateRange({ ...customDateRange, start: e.target.value })
-                    setDateRangeType('custom')
-                  }}
-                  className="flex-1 px-2 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-                <span className="text-slate-400">至</span>
-                <input
-                  type="date"
-                  value={customDateRange.end}
-                  onChange={(e) => {
-                    setCustomDateRange({ ...customDateRange, end: e.target.value })
-                    setDateRangeType('custom')
-                  }}
-                  className="flex-1 px-2 py-2 border border-slate-300 rounded-lg text-sm"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* 当前选择显示 */}
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <span>📊 当前查看：</span>
-            <span className="font-bold text-orange-600">{getSelectionTitle()}</span>
-            <span>·</span>
-            <span>{dayCount}天</span>
-            <span>·</span>
-            <span>{start} 至 {end}</span>
+      {dailyData.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, background: 'white', borderRadius: 12, color: '#999' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
+          <div style={{ fontSize: 16 }}>暂无数据</div>
+        </div>
+      ) : (
+        <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
+                  <th style={{ padding: 12, textAlign: 'left' }}>日期</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>销售额</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>订单量</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>净销售额</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>发货成本</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>刷单金额</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>刷单量</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>刷单佣金</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>退款金额</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>退回成本</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>推广费</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>运费</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>手续费</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>人工场地费</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>ROI</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>毛利率</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>退货率</th>
+                  <th style={{ padding: 12, textAlign: 'right' }}>利润</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyData.map((row, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: 12, fontWeight: 500 }}>{row.date}</td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#1890ff' }}>¥{row.sales.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>{row.orders}</td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#722ed1' }}>¥{row.netSales.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>
+                      {canEdit && row.editingCost ? (
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                          <input type="number" value={row.tempCost ?? row.cost} onChange={(e) => handleEditChange(row.date, 'cost', e.target.value)} onBlur={() => handleEditSave(row.date, 'cost')} onKeyDown={(e) => { if (e.key === 'Enter') handleEditSave(row.date, 'cost'); if (e.key === 'Escape') handleEditCancel(row.date, 'cost') }} autoFocus style={{ width: 80, padding: '4 8', border: '1px solid #1890ff', borderRadius: 4, fontSize: 13 }} />
+                          <button onClick={() => handleEditSave(row.date, 'cost')} style={{ padding: '4 8', background: '#52c41a', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✓</button>
+                          <button onClick={() => handleEditCancel(row.date, 'cost')} style={{ padding: '4 8', background: '#ff4d4f', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✗</button>
+                        </div>
+                      ) : canEdit ? (
+                        <span onClick={() => handleEditClick(row.date, 'cost', row.cost)} style={{ cursor: 'pointer', color: '#fa8c16', borderBottom: '1px dashed #fa8c16' }} title="点击编辑">¥{row.cost.toFixed(2)}</span>
+                      ) : (
+                        <span style={{ color: '#999' }}>¥{row.cost.toFixed(2)}</span>
+                      )}
+                    </td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#fa8c16' }}>¥{row.fakeAmount.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>{row.fakeOrders}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>
+                      {canEdit && row.editingCommission ? (
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                          <input type="number" value={row.tempCommission ?? row.commission} onChange={(e) => handleEditChange(row.date, 'commission', e.target.value)} onBlur={() => handleEditSave(row.date, 'commission')} onKeyDown={(e) => { if (e.key === 'Enter') handleEditSave(row.date, 'commission'); if (e.key === 'Escape') handleEditCancel(row.date, 'commission') }} autoFocus style={{ width: 80, padding: '4 8', border: '1px solid #1890ff', borderRadius: 4, fontSize: 13 }} />
+                          <button onClick={() => handleEditSave(row.date, 'commission')} style={{ padding: '4 8', background: '#52c41a', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✓</button>
+                          <button onClick={() => handleEditCancel(row.date, 'commission')} style={{ padding: '4 8', background: '#ff4d4f', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✗</button>
+                        </div>
+                      ) : canEdit ? (
+                        <span onClick={() => handleEditClick(row.date, 'commission', row.commission)} style={{ cursor: 'pointer', color: '#fa8c16', borderBottom: '1px dashed #fa8c16' }} title="点击编辑">¥{row.commission.toFixed(2)}</span>
+                      ) : (
+                        <span style={{ color: '#999' }}>¥{row.commission.toFixed(2)}</span>
+                      )}
+                    </td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#ff4d4f' }}>¥{row.refund.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>
+                      {canEdit && row.editingReturnCost ? (
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                          <input type="number" value={row.tempReturnCost ?? row.returnCost} onChange={(e) => handleEditChange(row.date, 'returnCost', e.target.value)} onBlur={() => handleEditSave(row.date, 'returnCost')} onKeyDown={(e) => { if (e.key === 'Enter') handleEditSave(row.date, 'returnCost'); if (e.key === 'Escape') handleEditCancel(row.date, 'returnCost') }} autoFocus style={{ width: 80, padding: '4 8', border: '1px solid #1890ff', borderRadius: 4, fontSize: 13 }} />
+                          <button onClick={() => handleEditSave(row.date, 'returnCost')} style={{ padding: '4 8', background: '#52c41a', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✓</button>
+                          <button onClick={() => handleEditCancel(row.date, 'returnCost')} style={{ padding: '4 8', background: '#ff4d4f', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✗</button>
+                        </div>
+                      ) : canEdit ? (
+                        <span onClick={() => handleEditClick(row.date, 'returnCost', row.returnCost)} style={{ cursor: 'pointer', color: '#52c41a', borderBottom: '1px dashed #52c41a' }} title="点击编辑">¥{row.returnCost.toFixed(2)}</span>
+                      ) : (
+                        <span style={{ color: '#999' }}>¥{row.returnCost.toFixed(2)}</span>
+                      )}
+                    </td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#fa8c16' }}>¥{row.adCost.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>¥{row.shippingCost.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>¥{row.platformFee.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right' }}>¥{row.laborCost.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#eb2f96', fontWeight: 500 }}>{row.roi.toFixed(2)}</td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#13c2c2' }}>{row.grossMargin.toFixed(2)}%</td>
+                    <td style={{ padding: 12, textAlign: 'right', color: '#ff4d4f' }}>{row.refundRate.toFixed(2)}%</td>
+                    <td style={{ padding: 12, textAlign: 'right', fontWeight: 'bold', color: row.profit >= 0 ? '#52c41a' : '#ff4d4f' }}>¥{row.profit.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
 
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">⏳</div>
-            <p className="text-slate-500">加载中...</p>
-          </div>
-        ) : salesData.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl shadow-sm border border-slate-100">
-            <div className="text-6xl mb-4">📦</div>
-            <p className="text-slate-500 mb-4">暂无数据</p>
-            <button
-              onClick={() => router.push('/import')}
-              className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
-            >
-              去导入数据
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* 汇总卡片 */}
-            <div className="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-6 gap-4 mb-8">
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">销售额</p>
-                <p className="text-xl font-bold text-slate-900 mt-1">¥{(totalSales / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">订单量</p>
-                <p className="text-xl font-bold text-slate-900 mt-1">{totalOrders}</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">成本</p>
-                <p className="text-xl font-bold text-red-600 mt-1">¥{(totalCost / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">刷单金额</p>
-                <p className="text-xl font-bold text-orange-600 mt-1">¥{(totalFakeAmount / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">刷单量</p>
-                <p className="text-xl font-bold text-orange-600 mt-1">{totalFakeOrders}</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">刷单佣金</p>
-                <p className="text-xl font-bold text-orange-600 mt-1">¥{(totalCommission / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">退款金额</p>
-                <p className="text-xl font-bold text-red-600 mt-1">¥{(totalRefund / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">退回成本</p>
-                <p className="text-xl font-bold text-red-600 mt-1">¥{(totalReturnCost / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">推广费</p>
-                <p className="text-xl font-bold text-orange-600 mt-1">¥{(totalAdCost / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">运费</p>
-                <p className="text-xl font-bold text-slate-700 mt-1">¥{(totalLogistics / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">平台服务费</p>
-                <p className="text-xl font-bold text-slate-700 mt-1">¥{(totalPlatformFee / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">人工场地费</p>
-                <p className="text-xl font-bold text-slate-700 mt-1">¥{(totalLabor / 10000).toFixed(2)}万</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">ROI</p>
-                <p className="text-xl font-bold text-orange-600 mt-1">{roi}</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">毛利率</p>
-                <p className="text-xl font-bold text-green-600 mt-1">{grossMargin}%</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">退货率</p>
-                <p className="text-xl font-bold text-red-600 mt-1">{refundRate}%</p>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-slate-500 text-xs">利润</p>
-                <p className={`text-xl font-bold mt-1 ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ¥{(totalProfit / 10000).toFixed(2)}万
-                </p>
-              </div>
-            </div>
-
-            {/* 数据明细表 */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                <h2 className="text-lg font-bold text-slate-800">📋 每日数据明细（{dayCount}天）</h2>
-                <p className="text-sm text-slate-500">{start} 至 {end}</p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3">日期</th>
-                      <th className="px-4 py-3 text-right">销售额</th>
-                      <th className="px-4 py-3 text-right">订单量</th>
-                      <th className="px-4 py-3 text-right">成本</th>
-                      <th className="px-4 py-3 text-right">刷单金额</th>
-                      <th className="px-4 py-3 text-right">刷单量</th>
-                      <th className="px-4 py-3 text-right">刷单佣金</th>
-                      <th className="px-4 py-3 text-right">退款金额</th>
-                      <th className="px-4 py-3 text-right">退回成本</th>
-                      <th className="px-4 py-3 text-right">推广费</th>
-                      <th className="px-4 py-3 text-right">运费</th>
-                      <th className="px-4 py-3 text-right">平台费</th>
-                      <th className="px-4 py-3 text-right">人工费</th>
-                      <th className="px-4 py-3 text-right">ROI</th>
-                      <th className="px-4 py-3 text-right">毛利率</th>
-                      <th className="px-4 py-3 text-right">退货率</th>
-                      <th className="px-4 py-3 text-right">利润</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {dailyList.map((day: any) => {
-                      const dayRoi = day.adCost > 0 ? (day.sales / day.adCost).toFixed(2) : '0.00'
-                      const dayGrossMargin = day.sales > 0 ? ((day.grossProfit / day.sales) * 100).toFixed(1) : '0.0'
-                      const dayRefundRate = day.orders > 0 ? ((day.refund / day.sales) * 100).toFixed(1) : '0.0'
-                      
-                      return (
-                        <tr key={day.date} className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-900">{day.date}</td>
-                          <td className="px-4 py-3 text-right text-slate-700">¥{(day.sales / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-slate-700">{day.orders}</td>
-                          <td className="px-4 py-3 text-right text-red-600">¥{(day.cost / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-orange-600">¥{(day.fakeAmount / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-orange-600">{day.fakeOrders}</td>
-                          <td className="px-4 py-3 text-right text-orange-600">¥{(day.commission / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-red-600">¥{(day.refund / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-red-600">¥{(day.returnCost / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-orange-600">¥{(day.adCost / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-slate-700">¥{(day.logistics / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-slate-700">¥{(day.platformFee / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-slate-700">¥{(day.labor / 10000).toFixed(2)}万</td>
-                          <td className="px-4 py-3 text-right text-orange-600">{dayRoi}</td>
-                          <td className="px-4 py-3 text-right text-green-600">{dayGrossMargin}%</td>
-                          <td className="px-4 py-3 text-right text-red-600">{dayRefundRate}%</td>
-                          <td className={`px-4 py-3 text-right font-medium ${day.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ¥{(day.profit / 10000).toFixed(2)}万
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
-      </main>
+function StatCard({ title, value, color }: { title: string; value: string | number; color: string }) {
+  return (
+    <div style={{ padding: 20, background: 'white', borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderLeft: `4px solid ${color}` }}>
+      <div style={{ fontSize: 20, color: '#333', marginBottom: 8, fontWeight: 600 }}>{title}</div>
+      <div style={{ fontSize: 20, fontWeight: 'bold', color }}>{value}</div>
     </div>
   )
 }

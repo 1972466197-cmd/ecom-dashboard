@@ -111,7 +111,7 @@ export default function SalesSupabase() {
   const shops = ['淘宝楠箐', '宝怡城', '大福银饰', '抖音楠箐', '抖音心宿']
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="">
       {/* Toast 提示框 */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg ${
@@ -132,7 +132,7 @@ export default function SalesSupabase() {
       </aside>
 
       {/* 主内容区 */}
-      <main className="flex-1 p-8">
+      <main className="p-8">
         <header className="mb-8">
           <h1 className="text-3xl font-bold text-slate-800">📝 销售数据录入（Supabase）</h1>
           <p className="text-slate-500 mt-1">数据保存到 Supabase，同一天 + 同一店铺自动覆盖更新</p>
