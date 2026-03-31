@@ -143,7 +143,8 @@ export async function getTodaySummary(shopIds?: number[]) {
     gmv: 0,
     orders: 0,
     adCost: 0,
-    profit: 0
+    profit: 0,
+    roi: '0.00'
   }
 
   data?.forEach(row => {
